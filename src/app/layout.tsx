@@ -1,93 +1,121 @@
 "use client";
 
 import { $authenStore } from "@lib/authenStore";
-import { Container, Group, Loader, Title } from "@mantine/core";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import Footer from "@components/Footer";
+import { Course } from "@lib/types";
+import {
+  Button,
+  Group,
+  Loader,
+  Paper,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import axios from "axios";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { Inter } from "next/font/google";
-import { MantineProvider } from "@mantine/core";
-import "@mantine/core/styles.css";
+export default function Home() {
+  // All courses state
+  const [courses, setCourses] = useState<Course[] | null>(null);
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
-const inter = Inter({ subsets: ["latin"] });
+  // login state
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loadingLogin, setLoadingLogin] = useState(false);
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  const [isCheckingAuthen, setIsCheckingAuthen] = useState(true);
-  const [isPending, startTransition] = useTransition();
+  // declare useRouter
   const router = useRouter();
-  const pathname = usePathname();
 
-  const checkAuthen = async () => {
-    const token = localStorage.getItem("token");
-    const authenUsername = localStorage.getItem("authenUsername");
-
-    //check within localStorage
-    let isTokenValid = true;
-    if (!token || !authenUsername) {
-      isTokenValid = false;
-    } else {
-      //check if token is still valid
-      try {
-        const resp = await axios.get("/api/user/checkAuthen", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        $authenStore.set({ token, authenUsername });
-      } catch (err) {
-        console.log(err.message);
-        isTokenValid = false;
-      }
-    }
-
-    //go to login if not logged in yet and trying to access protected route
-    if (pathname !== "/" && !isTokenValid) {
-      startTransition(() => {
-        router.push("/");
-      });
-
-      //go to /student if already logged in
-    } else if (pathname === "/" && isTokenValid) {
-      startTransition(() => {
-        router.push("/student");
-      });
-    }
-    setIsCheckingAuthen(false);
+  const loadCourses = async () => {
+    setLoadingCourses(true);
+    const resp = await axios.get("/api/courses");
+    setCourses(resp.data.courses);
+    setLoadingCourses(false);
   };
 
   useEffect(() => {
-    // Check authen when component mounts or route changes
-    checkAuthen();
+    loadCourses();
   }, []);
 
+  const login = async () => {
+    setLoadingLogin(true);
+    try {
+      const resp = await axios.post("/api/user/login", { username, password });
+      localStorage.setItem("token", resp.data.token);
+      localStorage.setItem("authenUsername", resp.data.username);
+
+      //save token and authenUsername to global store
+      $authenStore.set({
+        token: resp.data.token,
+        authenUsername: resp.data.username,
+      });
+
+      //navigate to /student
+      router.push("/student");
+    } catch (error) {
+      // if (error.response) alert(error.response.data.message);
+      // else alert(error.message);
+
+      if (axios.isAxiosError(error)) {
+        console.log(error.status);
+        console.error(error.response);
+        alert(error.response?.data.message);
+        // Do something with this error...
+      } else {
+        console.error(error);
+        alert(error);
+      }
+    }
+    setLoadingLogin(false);
+  };
+
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <MantineProvider>
-          {(isCheckingAuthen || isPending) && (
-            <Group align="center">
-              <Loader />
-            </Group>
-          )}
-          {!isCheckingAuthen && !isPending && (
-            <Container size="sm">
-              <Title fs="italic" ta="center" c="violet" my="xs">
-                Course Enrollment
-              </Title>
-              {children}
-              <Footer
-                studentId="660610999"
-                fullName="Dome Potikanond"
-                year="2024"
-              />
-            </Container>
-          )}
-        </MantineProvider>
-      </body>
-    </html>
+    <Stack>
+      {/* all courses section */}
+      <Paper withBorder p="md">
+        <Title order={4}>All courses</Title>
+
+        {loadingCourses && !courses && <Loader type="dots" />}
+
+        {courses &&
+          courses.map((course) => (
+            <Text key={course.courseNo}>
+              {course.courseNo} - {course.title}
+            </Text>
+          ))}
+      </Paper>
+
+      {/* log in section */}
+      <Paper withBorder p="md">
+        <Title order={4}>Login</Title>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            login();
+          }}
+        >
+          <Group align="flex-end">
+            <TextInput
+              label="Username"
+              onChange={(e) => setUsername(e.target.value)}
+              value={username}
+            />
+            <TextInput
+              label="Password"
+              onChange={(e) => setPassword(e.target.value)}
+              value={password}
+              type="password"
+            />
+            <Button type="submit" disabled={loadingLogin}>
+              {loadingLogin ? "Login..." : "Login"}
+            </Button>
+          </Group>
+        </form>
+      </Paper>
+    </Stack>
   );
 }
